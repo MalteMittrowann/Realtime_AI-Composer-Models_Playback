@@ -51,13 +51,16 @@ pip install tensorflow numpy pretty_midi python-osc tqdm
 1. Data Preparation & Training
 * Place your MIDI files in a folder structure organized by composer:
 
+```
 dataset/
     ├── Bach/
     │   ├── fugue1.mid
     │   └── ...
     ├── Beethoven/
     │   └── sonata.mid
+    │   └── ...
     └── ...
+```
 
 * Run the training script to generate models:
 
@@ -89,12 +92,13 @@ python train_composer_models.py \
 
 Once the script is running, use the following keyboard shortcuts to interact with the AI:
 
-Key Function	Description
-T / G	Temperature +/-	Increases/Decreases prediction randomness (Entropy).
-D / F	Density +/-	Probability gate for note generation (High = busy, Low = sparse).
-I / K	Intensity +/-	Scales the output velocity (Dynamics).
-C	Change Composer	Opens a menu to hot-swap the underlying AI model.
-Q	Quit	Gracefully stops the engine and sends Note-Offs.
+| Key | Function | Description |
+| :--- | :--- | :--- |
+| **T / G** | Temperature +/- | Increases/Decreases prediction randomness (Entropy). |
+| **D / F** | Density +/- | Probability gate for note generation (High = busy, Low = sparse). |
+| **I / K** | Intensity +/- | Scales the output velocity (Dynamics). |
+| **C** | Change Composer | Opens a menu to hot-swap the underlying AI model. |
+| **Q** | Quit | Gracefully stops the engine and sends Note-Offs. |
 
 ## Technical Implementation Details
 
