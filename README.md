@@ -46,6 +46,14 @@ The system consists of three main modules:
 
 pip install tensorflow numpy pretty_midi python-osc tqdm
 
+### Download Pre-trained Models
+
+Due to GitHub file size limits, the trained models (`.h5` files) are hosted in the Releases section.
+
+1. Go to the **[Releases Page](https://github.com/MalteMittrowann/Realtime_AI-Composer-Models_Playback/releases)** of this repository.
+2. Download the zipped `.h5` files.
+3. Unzip the file and place the content inside the empty `models` folder.
+
 ## Usage
 
 1. Data Preparation & Training
