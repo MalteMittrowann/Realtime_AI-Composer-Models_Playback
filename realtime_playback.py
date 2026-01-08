@@ -344,7 +344,7 @@ class RealTimeOSCStreamer:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--models_dir", default="./models_v1")
+    parser.add_argument("--models_dir", default="./models")
     parser.add_argument("--osc_host", default="127.0.0.1")
     parser.add_argument("--osc_port", type=int, default=56120)
     parser.add_argument("--step_seconds", type=float, default=0.125)
