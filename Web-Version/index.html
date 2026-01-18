@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neural MIDI Web</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js für Audio -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- TensorFlow.js für die KI -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+
+    <style>
+        body { background-color: #111; color: #eee; font-family: sans-serif; }
+        input[type=range] { accent-color: #3b82f6; width: 100%; }
+        .loader { border: 4px solid #333; border-top: 4px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="bg-gray-800 p-8 rounded-xl shadow-2xl w-full max-w-lg border border-gray-700">
+        <h1 class="text-2xl font-bold mb-6 text-center text-blue-400">Neural MIDI Web</h1>
+
+        <!-- Status Anzeige -->
+        <div id="statusBox" class="bg-gray-900 p-3 rounded text-sm text-gray-400 mb-6 font-mono text-center border border-gray-700 break-all">
+            Initialisiere...
+        </div>
+
+        <!-- Controls -->
+        <div class="space-y-6">
+            <div>
+                <label class="block text-sm font-medium mb-1 text-gray-300">Komponist wählen</label>
+                <select id="modelSelect" disabled class="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500 transition disabled:opacity-50">
+                    <option>Lade Liste...</option>
+                </select>
+            </div>
+
+            <button id="toggleBtn" disabled class="w-full bg-gray-600 text-gray-300 font-bold py-4 rounded transition text-lg shadow-lg">
+                Start Audio & AI
+            </button>
+
+            <div class="border-t border-gray-700 my-4"></div>
+
+            <!-- Regler -->
+            <div>
+                <div class="flex justify-between text-sm mb-1 text-gray-300"><label>Temperatur</label><span id="valTemp" class="text-blue-400">1.0</span></div>
+                <input type="range" id="rngTemp" min="0.1" max="3.0" step="0.1" value="1.0">
+            </div>
+
+            <div>
+                <div class="flex justify-between text-sm mb-1 text-gray-300"><label>Dichte</label><span id="valDens" class="text-blue-400">1.0</span></div>
+                <input type="range" id="rngDens" min="0.0" max="1.0" step="0.05" value="1.0">
+            </div>
+            
+            <div>
+                <div class="flex justify-between text-sm mb-1 text-gray-300"><label>Energie</label><span id="valInt" class="text-blue-400">1.0</span></div>
+                <input type="range" id="rngInt" min="0.1" max="1.5" step="0.1" value="1.0">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isRunning = false;
+        let model = null;
+        let vocab = null;
+        const SEQ_LEN = 64; 
+        let sequence = new Array(SEQ_LEN).fill(0);
+        let idToToken = {};
+        let params = { temp: 1.0, density: 1.0, intensity: 1.0 };
+        let sampler = null;
+        const STEP_TIME = 0.125;
+
+        const statusBox = document.getElementById('statusBox');
+        const btn = document.getElementById('toggleBtn');
+        const select = document.getElementById('modelSelect');
+
+        function setStatus(msg, loading=false) {
+            statusBox.innerHTML = loading ? `<div class="loader mr-2"></div> ${msg}` : msg;
+            if(!loading && (msg.includes("Fehler") || msg.includes("Failed"))) {
+                statusBox.classList.add("text-red-400");
+                console.error("App Error:", msg);
+            } else {
+                statusBox.classList.remove("text-red-400");
+            }
+        }
+
+        async function initApp() {
+            setStatus("Lade composers.json...", true);
+            try {
+                // Cache-Busting mit Timestamp
+                const res = await fetch('composers.json?t=' + Date.now());
+                if (!res.ok) throw new Error(`HTTP ${res.status}: composers.json nicht gefunden.`);
+                const composers = await res.json();
+                
+                select.innerHTML = "";
+                composers.forEach(name => {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.innerText = name;
+                    select.appendChild(opt);
+                });
+
+                select.disabled = false;
+                btn.disabled = false;
+                btn.classList.remove("bg-gray-600", "text-gray-300");
+                btn.classList.add("bg-blue-600", "hover:bg-blue-500", "text-white");
+                setStatus("Bereit.");
+            } catch (e) {
+                setStatus("Fehler: " + e.message);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', initApp);
+
+        async function initAudio() {
+            setStatus("Lade Piano Samples...", true);
+            await Tone.start();
+            sampler = new Tone.Sampler({
+                urls: {
+                    "A0": "A0.mp3", "C1": "C1.mp3", "D#1": "Ds1.mp3", "F#1": "Fs1.mp3", "A1": "A1.mp3",
+                    "C2": "C2.mp3", "D#2": "Ds2.mp3", "F#2": "Fs2.mp3", "A2": "A2.mp3",
+                    "C3": "C3.mp3", "D#3": "Ds3.mp3", "F#3": "Fs3.mp3", "A3": "A3.mp3",
+                    "C4": "C4.mp3", "D#4": "Ds4.mp3", "F#4": "Fs4.mp3", "A4": "A4.mp3",
+                    "C5": "C5.mp3", "D#5": "Ds5.mp3", "F#5": "Fs5.mp3", "A5": "A5.mp3",
+                    "C6": "C6.mp3", "D#6": "Ds6.mp3", "F#6": "Fs6.mp3", "A6": "A6.mp3",
+                    "C7": "C7.mp3", "D#7": "Ds7.mp3", "F#7": "Fs7.mp3", "A7": "A7.mp3",
+                    "C8": "C8.mp3"
+                },
+                release: 1,
+                baseUrl: "https://tonejs.github.io/audio/salamander/"
+            }).toDestination();
+            const reverb = new Tone.Reverb(2.5).toDestination();
+            sampler.connect(reverb);
+            await Tone.loaded();
+        }
+
+        async function loadComposer(composerName) {
+            setStatus(`Lade ${composerName}...`, true);
+            isRunning = false;
+            
+            // Pfad-Sicherheit
+            let baseUrl = window.location.href;
+            baseUrl = baseUrl.replace(/index\.html$/, '');
+            if (!baseUrl.endsWith('/')) baseUrl += '/';
+            
+            const basePath = `./models/${composerName}/`;
+            const ts = "?t=" + Date.now();
+
+            try {
+                // 1. Vocab laden
+                const vRes = await fetch(`${basePath}vocab.json${ts}`);
+                if (!vRes.ok) throw new Error(`HTTP ${vRes.status}: vocab.json fehlt`);
+                const vData = await vRes.json();
+                
+                idToToken = {};
+                for (let [tok, id] of Object.entries(vData.token_to_id)) {
+                    idToToken[id] = tok;
+                }
+                
+                // 2. Model JSON laden
+                const modelUrl = `${basePath}model.json${ts}`;
+                const mRes = await fetch(modelUrl);
+                if (!mRes.ok) throw new Error(`HTTP ${mRes.status}: model.json fehlt`);
+                
+                let modelJson = await mRes.json();
+
+                // Patch Input Shape
+                const layers = modelJson.modelTopology?.model_config?.config?.layers;
+                if (layers && layers.length > 0) {
+                    const firstConfig = layers[0].config;
+                    if (!firstConfig.batch_input_shape && !firstConfig.input_shape) {
+                        firstConfig.batch_input_shape = [null, vData.seq_len || 64];
+                    }
+                }
+
+                // 3. "Browser-File" Simulation
+                // Wir laden alle Binaries herunter und verpacken sie als JS-File-Objekte.
+                // Das umgeht alle CORS und Loader Probleme innerhalb von TFJS.
+                
+                const absoluteBase = new URL(basePath, baseUrl).href;
+                const fileObjects = []; // Liste der virtuellen Dateien
+
+                if (modelJson.weightsManifest) {
+                    setStatus(`Lade KI-Modell...`, true);
+                    
+                    for (const group of modelJson.weightsManifest) {
+                        for (const path of group.paths) {
+                            // Wir laden die Datei
+                            const weightUrl = new URL(path, absoluteBase).href;
+                            const res = await fetch(weightUrl);
+                            if (!res.ok) throw new Error(`Gewichte-Download fehlgeschlagen: ${path} (${res.status})`);
+                            
+                            const blob = await res.blob();
+                            
+                            // WICHTIG: Wir erstellen ein File-Objekt mit dem exakten Namen aus dem Manifest
+                            // TensorFlow.js sucht in seiner Dateiliste nach diesem Namen.
+                            // Wir entfernen evtl. Pfad-Präfixe (z.B. ./group1...) für den Dateinamen
+                            const fileName = path.split('/').pop(); 
+                            const file = new File([blob], fileName, { type: 'application/octet-stream' });
+                            fileObjects.push(file);
+                        }
+                        
+                        // Wir müssen auch die Pfade im Manifest "glätten", damit sie zu den flachen Dateinamen passen
+                        group.paths = group.paths.map(p => p.split('/').pop());
+                    }
+                }
+
+                // Auch das JSON selbst muss als File vorliegen
+                const jsonBlob = new Blob([JSON.stringify(modelJson)], { type: 'application/json' });
+                const jsonFile = new File([jsonBlob], "model.json", { type: 'application/json' });
+                fileObjects.push(jsonFile);
+
+                // Jetzt laden wir "lokale Dateien"
+                try {
+                    // tf.io.browserFiles nimmt eine Liste von File-Objekten.
+                    // TFJS sucht darin nach der model.json und lädt die referenzierten Gewichte aus derselben Liste.
+                    model = await tf.loadLayersModel(tf.io.browserFiles(fileObjects), {strict: false});
+                } catch (loadErr) {
+                    console.error("TFJS Load Error:", loadErr);
+                    throw new Error(`TFJS Fehler: ${loadErr.message}`);
+                }
+                
+                sequence = new Array(vData.seq_len || 64).fill(0);
+                setStatus(`Bereit: ${composerName}`);
+                return true;
+            } catch (e) {
+                setStatus("Fehler: " + e.message);
+                console.error(e);
+                return false;
+            }
+        }
+
+        async function step() {
+            if (!isRunning || !model) return;
+            const nextId = tf.tidy(() => {
+                const inputTensor = tf.tensor2d([sequence], [1, sequence.length], 'int32');
+                const prediction = model.predict(inputTensor);
+                const logits = prediction.squeeze([0]); 
+                return sampleWithTemp(logits, params.temp);
+            });
+            sequence.shift();
+            sequence.push(nextId);
+            const token = idToToken[nextId] || "<UNK>";
+            let pitches = tokenToPitches(token);
+            if (Math.random() > params.density) pitches = [];
+            playNotes(pitches);
+            if (isRunning) setTimeout(step, STEP_TIME * 1000);
+        }
+
+        function sampleWithTemp(logits, temperature) {
+            return tf.tidy(() => {
+                const temp = Math.max(0.01, temperature);
+                const scaled = tf.div(logits, temp);
+                const probs = tf.softmax(scaled);
+                const sample = tf.multinomial(probs, 1);
+                return sample.dataSync()[0]; 
+            });
+        }
+
+        function tokenToPitches(token) {
+            if (!token || token === "rest" || token === "<UNK>") return [];
+            try { return token.split(",").map(n => parseInt(n)); } catch (e) { return []; }
+        }
+
+        function playNotes(pitches) {
+            const now = Tone.now();
+            pitches.forEach(midi => {
+                const note = Tone.Frequency(midi, "midi").toNote();
+                const vel = Math.min(1.0, (params.intensity * 0.7) + (Math.random() * 0.3));
+                sampler.triggerAttackRelease(note, STEP_TIME * 1.5, now, vel);
+            });
+        }
+
+        btn.addEventListener('click', async () => {
+            if (Tone.context.state !== 'running') await Tone.start();
+            if (!sampler) await initAudio();
+            if (!isRunning) {
+                if (!model) {
+                    const success = await loadComposer(select.value);
+                    if (!success) return;
+                }
+                isRunning = true;
+                step(); 
+                btn.innerText = "Stop Generation";
+                btn.classList.replace("bg-blue-600", "bg-red-600");
+            } else {
+                isRunning = false;
+                btn.innerText = "Start Audio & AI";
+                btn.classList.replace("bg-red-600", "bg-blue-600");
+                setStatus("Pausiert.");
+            }
+        });
+
+        select.addEventListener('change', async (e) => {
+            isRunning = false;
+            model = null; // Wichtig: Altes Modell löschen
+            btn.innerText = "Start Audio & AI";
+            btn.classList.replace("bg-red-600", "bg-blue-600");
+            await loadComposer(e.target.value);
+        });
+
+        ['Temp', 'Dens', 'Int'].forEach(key => {
+            const el = document.getElementById('rng' + key);
+            const disp = document.getElementById('val' + key);
+            el.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                disp.innerText = val.toFixed(1);
+                if (key === 'Temp') params.temp = val;
+                if (key === 'Dens') params.density = val;
+                if (key === 'Int') params.intensity = val;
+            });
+        });
+    </script>
+</body>
+</html>

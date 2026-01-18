@@ -1,0 +1,21 @@
+# 1. CORS erlauben (Wichtig für TensorFlow.js)
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type"
+</IfModule>
+
+# 2. Dateitypen korrekt zuordnen
+# Damit der Server weiß, dass .bin Dateien Binärdaten sind
+AddType application/json .json
+AddType application/octet-stream .bin
+
+# 3. Caching für model.json deaktivieren
+# Damit Änderungen am Modell sofort sichtbar sind und nicht im Browser-Cache hängen
+<FilesMatch "\.(json)$">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "max-age=0, no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "Wed, 11 Jan 1984 05:00:00 GMT"
+    </IfModule>
+</FilesMatch>

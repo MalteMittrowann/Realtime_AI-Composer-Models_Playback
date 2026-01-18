@@ -1,20 +1,34 @@
 # Realtime_AI-Composer-Models_Playback
-AI model training with MIDI-datasets of classical composers in Python --> Realtime playback of MIDI-notes with trained models in python --> Realtime playback of said MIDI-notes with the VST-plugin "LABS" from Steinberg in PureData
+AI model training with MIDI-datasets of classical composers in Python --> Realtime playback of MIDI-notes with trained models in python --> Realtime playback of said MIDI-notes with the VST-plugin "LABS" from Steinberg in PureData.
+
+**LIVE DEMO:** Try the web version directly in your browser:
+
+[Live Web Version of Neural-MIDI](https://maltemittrowann.com/Neural-MIDI/)
 
 ## Overview
 **NeuralMIDI-Streamer** is a real-time generative music system that bridges the gap between Deep Learning and live audio synthesis. It uses **LSTM (Long Short-Term Memory)** neural networks trained on classical composer datasets to generate polyphonic MIDI streams on the fly.
 
-Unlike static MIDI generation, this system acts as a **virtual instrument**: it streams notes via **OSC (Open Sound Control)** to a dedicated audio engine (PureData hosting VST plugins). The system features a custom state-machine to handle note polyphony, velocity smoothing, and allows the user to modulate generation parameters (Temperature, Density, Intensity) live during performance.
+This project offers two modes of operation:
+
+1. **Desktop Mode (High Performance):** Acts as a virtual instrument, streaming notes via OSC to PureData hosting high-quality VST plugins.
+2. **Web Mode (Accessible):** Runs entirely client-side in the browser using TensorFlow.js and Tone.js.
+
+The system features a custom state-machine to handle note polyphony, velocity smoothing, and allows the user to modulate generation parameters (Temperature, Density, Intensity) live during performance.
+
+Unlike static MIDI generation, this system acts as a **virtual instrument**: The system features a custom state-machine to handle note polyphony, velocity smoothing, and allows the user to modulate generation parameters (Temperature, Density, Intensity) live during performance.
+In the offline desktop version the MIDI data is streamed via OSC to a dedicated audio engine in PureData.
+As for the web app the MIDI data is played by the salamander-piano MIDI instrument (`Tone.Sampler` (Salamander Piano)) directly in you browser.
 
 This project serves as a research prototype for exploring **Human-AI Interaction** in musical improvisation.
 
 ## System Architecture
 
-The system consists of three main modules:
+The system consists of four main modules:
 
-1.  **Training Module (`train_composer_models.py`):** Parses raw MIDI datasets, tokenizes polyphonic chords, and trains composer-specific LSTM models.
-2.  **Inference Engine (`realtime_osc_streamer.py`):** Loads models, predicts next tokens in real-time, and manages a complex state machine to translate tokens into musical events (Note On/Off/Velocity).
-3.  **Audio Synthesis (PureData):** Receives OSC messages and triggers high-quality samples via the LABS VST plugin using `vstplugin~`.
+1.  **Training Module (Python: `train_composer_models.py`):** Parses raw MIDI datasets, tokenizes polyphonic chords, and trains composer-specific LSTM models in Python (Keras/TensorFlow).
+2.  **Desktop Inference Engine (Python: `realtime_osc_streamer.py`):** Loads `.h5` models, manages the generation state machine, and sends events via OSC.
+3.  **Desktop Audio Synthesis (PureData: `audio_engine.pd`):** PureData patch that receives OSC messages and triggers VST plugins (e.g., Spitfire LABS).
+4. **Web Client (`index.html`):** A standalone Single-Page-Application that runs converted models directly in the browser using **TensorFlow.js** and synthesizes audio via **Tone.js**.
 
 ## Key Features
 
@@ -25,9 +39,31 @@ The system consists of three main modules:
     * **Intensity:** Controls velocity dynamics and expression.
 * **Smooth Transitions:** Implements parameter smoothing (interpolation) to avoid abrupt jumps in musical dynamics.
 * **State-Based Note Logic:** A robust dispatcher handles note lifecycles, ensuring no "stuck notes" and allowing for smooth polyphonic voice allocation.
-* **Hot-Swapping:** Switch between different composer models (e.g., from Bach to Beethoven) in real-time without stopping the audio engine.
+* **Hot-Swapping:** Switch between different composer models (e.g., from Bach to Beethoven) in real-time.
 
-## Installation
+## Usage
+
+### Web Application
+
+Visit [maltemittrowann.com/Neural-MIDI](maltemittrowann.com/Neural-MIDI) to play with the pre-trained models online.
+
+### Deployment / Hosting
+
+To host the web app yourself, ensure the following folder structure on your web server. The app uses a robust loading mechanism to bypass CORS issues by pre-fetching binary weights.
+
+```
+/Neural-Midi/
+├── index.html            # The main application
+├── composers.json        # Config file listing available composers ["Bach", "Mozart"]
+└── models/               # Converted TFJS models
+    ├── Bach/
+    │   ├── vocab.json            # Original training vocabulary
+    │   ├── model.json            # TensorFlow.js model topology
+    │   └── group1-shard1ofX.bin  # Binary weights
+    └── ...
+```
+
+### Desktop Installation (Python + PureData)
 
 ### Prerequisites
 
@@ -44,7 +80,7 @@ The system consists of three main modules:
 * python-osc
 * tqdm
 
-pip install tensorflow numpy pretty_midi python-osc tqdm
+`pip install tensorflow numpy pretty_midi python-osc tqdm`
 
 ### Download Pre-trained Models
 
@@ -121,6 +157,8 @@ The `RealTimeOSCStreamer` class runs a continuous loop:
 2. **Sample:** A token is sampled based on the current Temperature.
 3. **Gate:** The Density parameter stochastically decides if the token creates sound or silence.
 4. **Dispatch:** The list of pitches is sent to the OSC manager.
+  * **Desktop:** Sends OSC `/note_on` and `/note_off` to PureData.
+  * **Web:** Triggers `Tone.Sampler` (Salamander Piano) directly in the browser.
 
 ### OSC State Machine
 
